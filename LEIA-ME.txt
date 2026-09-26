@@ -1,0 +1,73 @@
+CONTROLO DE BILHETES — GUIA DE CONFIGURAÇÃO (10-15 minutos, só uma vez)
+========================================================================
+
+Este site permite:
+- Criar um novo evento/filme e gerar automaticamente os QR codes.
+- Ler os QR codes com a câmara do telemóvel (funciona de verdade, fora do Claude).
+- Sincronizar em tempo real entre vários telemóveis (usando o Firebase, gratuito).
+- Descarregar a lista final em CSV (abre no Excel) depois do evento.
+- Imprimir/gerar PDF dos bilhetes directamente do site (botão "Imprimir/PDF").
+
+PASSO 1 — Criar a base de dados gratuita (Firebase)
+----------------------------------------------------
+1. Vá a https://console.firebase.google.com e inicie sessão com uma conta Google.
+2. Clique em "Adicionar projeto" (Add project). Dê um nome, ex: "cinema-ruby".
+   Pode desativar o Google Analytics (não é necessário).
+3. Dentro do projeto, no menu da esquerda, clique em "Firestore Database" >
+   "Criar base de dados" (Create database).
+   - Escolha "Iniciar em modo de teste" (Start in test mode).
+   - Escolha a localização mais próxima (ex: eur3 ou qualquer uma) e confirme.
+4. Ainda no Firebase, vá às "Definições do projeto" (ícone de engrenagem, canto
+   superior esquerdo) > "Geral". Em baixo, em "As suas apps", clique no ícone
+   </> (Web) para criar uma app Web. Dê um nome qualquer e clique em "Registar app".
+5. Vai aparecer um bloco de código com "firebaseConfig = { apiKey: ..., ... }".
+   Copie esses valores.
+
+PASSO 2 — Colar os dados no ficheiro config.js
+------------------------------------------------
+1. Abra o ficheiro "config.js" (dentro desta pasta) num editor de texto simples
+   (Bloco de Notas, por exemplo).
+2. Substitua cada "COLE_AQUI..." pelos valores que copiou no Passo 1.
+3. Guarde o ficheiro.
+
+PASSO 3 — (Importante) Regras de segurança do Firestore
+----------------------------------------------------------
+O modo de teste do Firebase expira sozinho ao fim de 30 dias e bloqueia tudo.
+Para este projeto funcionar sempre, vá a "Firestore Database" > separador
+"Regras" (Rules) e substitua o conteúdo por:
+
+    rules_version = '2';
+    service cloud.firestore {
+      match /databases/{database}/documents {
+        match /{document=**} {
+          allow read, write: if true;
+        }
+      }
+    }
+
+Depois clique em "Publicar" (Publish).
+
+ATENÇÃO: isto deixa a base de dados aberta a quem tiver o link do site. É
+aceitável para uso pessoal/pequena equipa, mas não partilhe o link do site
+publicamente (redes sociais, grupos abertos) — só com os seus colegas de confiança.
+
+PASSO 4 — Colocar o site online
+-----------------------------------
+1. Vá a https://app.netlify.com/drop
+2. Arraste ESTA PASTA INTEIRA (com index.html e config.js juntos) para a página.
+3. Em segundos recebe um link tipo https://algumnome.netlify.app — esse é o
+   link definitivo para partilhar com os seus colegas.
+
+COMO USAR NO DIA DO EVENTO
+------------------------------
+1. Abra o link no separador "Eventos" e crie o novo filme (nome, data, nº de
+   bilhetes) — os QR codes aparecem logo a seguir, prontos a imprimir.
+2. No separador "Scanner", escolha o evento activo no menu — todos os
+   telemóveis que abrirem o mesmo link e escolherem o mesmo evento ficam
+   sincronizados automaticamente.
+3. Aponte a câmara aos bilhetes à entrada. Sem câmara? Use o campo de código
+   manual.
+4. Depois do evento, use "Baixar lista final (CSV)" para guardar o registo.
+
+Qualquer dúvida na configuração, volte a esta conversa e diga-me em que
+passo ficou preso — envie-me a mensagem de erro se aparecer alguma.

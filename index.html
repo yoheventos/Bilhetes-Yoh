@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Controlo de Bilhetes — Cinema</title>
+<script src="config.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root { --bg:#1b120c; --panel:#2c1c12; --accent:#b01e1e; --gold:#d4a017; --text:#f5ead9; --muted:#b8a48f; --ok:#2f9e44; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; padding:14px; }
+  h1 { font-size:1.15rem; color:var(--gold); text-align:center; margin:4px 0 2px; }
+  .sub { text-align:center; color:var(--muted); font-size:0.78rem; margin-bottom:12px; }
+  .tabs { display:flex; gap:8px; max-width:480px; margin:0 auto 14px; }
+  .tabs button { flex:1; padding:10px; border:none; border-radius:8px; background:var(--panel); color:var(--muted); font-weight:600; }
+  .tabs button.active { background:var(--accent); color:#fff; }
+  .wrap { max-width:480px; margin:0 auto; }
+  .card { background:var(--panel); border-radius:12px; padding:14px; margin-bottom:12px; }
+  label { font-size:0.78rem; color:var(--muted); display:block; margin:8px 0 4px; }
+  input, select { width:100%; padding:9px 10px; border-radius:8px; border:1px solid #4a3222; background:#150e09; color:var(--text); font-size:0.9rem; }
+  button.btn { padding:10px 14px; border-radius:8px; border:none; background:var(--accent); color:#fff; font-weight:600; margin-top:10px; width:100%; }
+  button.btn.secondary { background:#4a3222; }
+  button.btn.ghost { background:transparent; border:1px solid #4a3222; color:var(--muted); }
+  .counter { display:flex; gap:10px; justify-content:center; margin-bottom:10px; }
+  .counter div { background:var(--panel); border-radius:10px; padding:8px 16px; text-align:center; min-width:80px; }
+  .counter .num { font-size:1.3rem; font-weight:700; }
+  .counter .lbl { font-size:0.62rem; color:var(--muted); }
+  #video-wrap { position:relative; width:100%; aspect-ratio:1/1; background:#000; border-radius:14px; overflow:hidden; border:2px solid var(--panel); }
+  video { width:100%; height:100%; object-fit:cover; }
+  #result { margin-top:12px; padding:14px; border-radius:10px; text-align:center; font-weight:700; background:var(--panel); color:var(--muted); min-height:50px; }
+  #result.ok { background:var(--ok); color:#fff; }
+  #result.err { background:var(--accent); color:#fff; }
+  #result .code { font-size:0.75rem; font-weight:400; margin-top:4px; }
+  .manual { display:flex; gap:8px; margin-top:10px; }
+  .manual input { flex:1; text-transform:uppercase; }
+  .sync { font-size:0.72rem; text-align:center; padding:4px 10px; border-radius:20px; background:var(--panel); margin-bottom:10px; }
+  .sync.on { color:#8adf9e; } .sync.off { color:var(--gold); }
+  .event-row { display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid #4a3222; font-size:0.85rem; }
+  .event-row button { background:transparent; border:1px solid #4a3222; color:var(--muted); padding:5px 9px; border-radius:6px; font-size:0.75rem; }
+  #grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:10px; }
+  .tkt { background:#fff; border-radius:8px; padding:6px; text-align:center; color:#222; }
+  .tkt canvas { width:100%; height:auto; }
+  .tkt .n { font-size:0.65rem; font-weight:700; margin-top:2px; }
+  .tkt .c { font-size:0.55rem; }
+  #qr-render { position:absolute; left:-9999px; }
+  .mode-toggle { display:flex; gap:8px; margin-bottom:10px; }
+  .mode-toggle button { flex:1; padding:8px; border:1px solid #4a3222; background:transparent; color:var(--muted); border-radius:8px; font-size:0.8rem; }
+  .mode-toggle button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  textarea#import-text { width:100%; min-height:110px; padding:9px 10px; border-radius:8px; border:1px solid #4a3222; background:#150e09; color:var(--text); font-size:0.82rem; font-family:monospace; }
+  .hint { font-size:0.68rem; color:var(--muted); margin-top:4px; }
+  #list-wrap { margin-top:10px; }
+  #search-input { margin-bottom:8px; }
+  #ticket-list { max-height:280px; overflow-y:auto; border-radius:10px; background:var(--panel); }
+  .row { display:flex; justify-content:space-between; padding:7px 10px; font-size:0.78rem; border-bottom:1px solid #4a3222; }
+  .row.used { color:var(--muted); }
+  .st-used { color:#ff8a8a; font-weight:600; }
+  .st-free { color:#8adf9e; font-weight:600; }
+  @media print {
+    .tabs, #scanner-view, .no-print { display:none !important; }
+    body { background:#fff; color:#000; }
+    #grid { grid-template-columns:repeat(4,1fr); }
+  }
+</style>
+</head>
+<body>
+  <h1>🎬 Controlo de Bilhetes</h1>
+  <div class="sub">Gerir eventos, gerar QR codes e validar entradas</div>
+
+  <div class="tabs no-print">
+    <button id="tab-scan" class="active">Scanner</button>
+    <button id="tab-events">Eventos</button>
+  </div>
+
+  <div class="wrap">
+    <!-- SCANNER -->
+    <div id="scanner-view">
+      <div class="card">
+        <label>Evento activo</label>
+        <select id="event-select"></select>
+      </div>
+
+      <div class="counter">
+        <div><div class="num" id="cnt-used">0</div><div class="lbl">ENTRARAM</div></div>
+        <div><div class="num" id="cnt-total">0</div><div class="lbl">TOTAL</div></div>
+      </div>
+      <div id="sync-status" class="sync off">A ligar...</div>
+
+      <div id="video-wrap">
+        <video id="video" playsinline muted></video>
+      </div>
+      <div id="cam-error" style="display:none;color:var(--gold);font-size:0.78rem;text-align:center;margin-top:8px;">Câmara indisponível — use a verificação manual abaixo.</div>
+
+      <div id="result">Selecione um evento e aponte a câmara</div>
+
+      <div class="manual">
+        <input id="manual-input" placeholder="CÓDIGO MANUAL">
+        <button class="btn" style="width:auto;" id="manual-btn">Verificar</button>
+      </div>
+
+      <button class="btn ghost" id="toggle-list-btn">📋 Ver lista de todos os bilhetes</button>
+      <div id="list-wrap" style="display:none;">
+        <input id="search-input" placeholder="Pesquisar código...">
+        <div id="ticket-list"></div>
+      </div>
+
+      <button class="btn secondary" id="download-csv-btn">⬇ Baixar lista final (CSV)</button>
+      <button class="btn ghost" id="reset-checkins-btn">Reiniciar entradas deste evento</button>
+    </div>
+
+    <!-- EVENTOS -->
+    <div id="events-view" style="display:none;">
+      <div class="card">
+        <h3 style="margin-top:0;">Criar novo evento / filme</h3>
+        <div class="mode-toggle">
+          <button id="mode-generate" class="active">Gerar novos códigos</button>
+          <button id="mode-import">Importar códigos já existentes</button>
+        </div>
+        <label>Nome do filme / evento</label>
+        <input id="new-name" placeholder="Ex: One Piece - Filme 2">
+        <label>Data</label>
+        <input id="new-date" type="date">
+
+        <div id="generate-fields">
+          <label>Nº de bilhetes</label>
+          <input id="new-total" type="number" value="100" min="1" max="500">
+          <button class="btn" id="create-event-btn">Gerar bilhetes e QR codes</button>
+        </div>
+
+        <div id="import-fields" style="display:none;">
+          <label>Ficheiro CSV/TXT com os códigos (opcional)</label>
+          <input type="file" id="import-file" accept=".csv,.txt">
+          <label>Ou cole aqui os códigos (um por linha, ou o CSV inteiro)</label>
+          <textarea id="import-text" placeholder="DS-CI-001-OU9ZSP&#10;DS-CI-002-WAXUJ2&#10;..."></textarea>
+          <div class="hint">Aceita uma lista simples (um código por linha) ou um CSV com uma coluna "codigo" — deteta sozinho.</div>
+          <button class="btn" id="import-btn">Importar bilhetes já existentes</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">Eventos existentes</h3>
+        <div id="events-list"></div>
+      </div>
+
+      <div class="card" id="tickets-card" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <h3 style="margin:0;" id="tickets-title">Bilhetes</h3>
+          <div>
+            <button class="btn secondary" style="width:auto;display:inline-block;" id="print-btn">🖨 Imprimir/PDF</button>
+          </div>
+        </div>
+        <div id="grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="qr-render"></div>
+  <canvas id="canvas" style="display:none;"></canvas>
+
+<script>
+firebase.initializeApp(window.FIREBASE_CONFIG);
+const db = firebase.firestore();
+
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function randSuffix(n) {
+  let s = '';
+  const arr = new Uint8Array(n);
+  crypto.getRandomValues(arr);
+  for (let i = 0; i < n; i++) s += ALPHABET[arr[i] % ALPHABET.length];
+  return s;
+}
+function slugPrefix(name) {
+  return (name || 'EV').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'EV';
+}
+
+// ---------- Tabs ----------
+document.getElementById('tab-scan').onclick = () => switchTab('scan');
+document.getElementById('tab-events').onclick = () => switchTab('events');
+function switchTab(t) {
+  document.getElementById('tab-scan').classList.toggle('active', t === 'scan');
+  document.getElementById('tab-events').classList.toggle('active', t === 'events');
+  document.getElementById('scanner-view').style.display = t === 'scan' ? 'block' : 'none';
+  document.getElementById('events-view').style.display = t === 'events' ? 'block' : 'none';
+}
+
+// ---------- Events list (shared by both tabs) ----------
+let events = [];
+let currentEventId = null;
+let ticketsState = {}; // code -> {used, usedAt}
+let unsubTickets = null;
+
+function loadEvents() {
+  db.collection('events').orderBy('createdAt', 'desc').onSnapshot((qs) => {
+    events = qs.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderEventSelect();
+    renderEventsList();
+  });
+}
+
+function renderEventSelect() {
+  const sel = document.getElementById('event-select');
+  const prev = sel.value;
+  sel.innerHTML = events.map(e => `<option value="${e.id}">${e.name} (${e.total} bilhetes)</option>`).join('');
+  if (events.length && !events.find(e => e.id === prev)) {
+    currentEventId = events[0].id;
+  } else if (prev) {
+    currentEventId = prev;
+  }
+  sel.value = currentEventId;
+  watchTickets(currentEventId);
+}
+document.getElementById('event-select').addEventListener('change', (e) => watchTickets(e.target.value));
+
+function watchTickets(eventId) {
+  currentEventId = eventId;
+  if (unsubTickets) unsubTickets();
+  ticketsState = {};
+  if (!eventId) { updateCounters(); return; }
+  unsubTickets = db.collection('events').doc(eventId).collection('tickets').onSnapshot((qs) => {
+    ticketsState = {};
+    qs.docs.forEach(d => { ticketsState[d.id] = d.data(); });
+    updateCounters();
+  }, () => {
+    document.getElementById('sync-status').textContent = 'Ligação instável…';
+    document.getElementById('sync-status').className = 'sync off';
+  });
+  document.getElementById('sync-status').textContent = 'Sincronizado entre dispositivos';
+  document.getElementById('sync-status').className = 'sync on';
+}
+
+function updateCounters() {
+  const codes = Object.keys(ticketsState);
+  const used = codes.filter(c => ticketsState[c].used).length;
+  document.getElementById('cnt-total').textContent = codes.length;
+  document.getElementById('cnt-used').textContent = used;
+  const listWrap = document.getElementById('list-wrap');
+  if (listWrap.style.display !== 'none') renderTicketList(document.getElementById('search-input').value);
+}
+
+function renderTicketList(filter) {
+  const host = document.getElementById('ticket-list');
+  const f = (filter || '').trim().toUpperCase();
+  const codes = Object.keys(ticketsState).sort();
+  host.innerHTML = codes.filter(c => !f || c.includes(f)).map(c => {
+    const t = ticketsState[c];
+    const time = t.used ? new Date(t.usedAt).toLocaleTimeString('pt-PT') : '';
+    return `<div class="row ${t.used ? 'used' : ''}"><span>${c}</span><span class="${t.used ? 'st-used' : 'st-free'}">${t.used ? 'Utilizado ' + time : 'Livre'}</span></div>`;
+  }).join('') || '<div style="padding:10px;color:var(--muted);font-size:0.8rem;">Nenhum bilhete encontrado.</div>';
+}
+
+document.getElementById('toggle-list-btn').onclick = () => {
+  const w = document.getElementById('list-wrap');
+  const hidden = w.style.display === 'none' || !w.style.display;
+  w.style.display = hidden ? 'block' : 'none';
+  if (hidden) renderTicketList(document.getElementById('search-input').value);
+};
+document.getElementById('search-input').addEventListener('input', (e) => renderTicketList(e.target.value));
+
+// ---------- Create/import mode toggle ----------
+document.getElementById('mode-generate').onclick = () => setMode('generate');
+document.getElementById('mode-import').onclick = () => setMode('import');
+function setMode(m) {
+  document.getElementById('mode-generate').classList.toggle('active', m === 'generate');
+  document.getElementById('mode-import').classList.toggle('active', m === 'import');
+  document.getElementById('generate-fields').style.display = m === 'generate' ? 'block' : 'none';
+  document.getElementById('import-fields').style.display = m === 'import' ? 'block' : 'none';
+}
+document.getElementById('import-file').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { document.getElementById('import-text').value = reader.result; };
+  reader.readAsText(file);
+});
+
+function parseImportedCodes(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const delim = lines[0].includes(';') ? ';' : (lines[0].includes(',') ? ',' : null);
+  let raw;
+  if (delim) {
+    const header = lines[0].split(delim).map(h => h.trim().toLowerCase());
+    const idx = header.findIndex(h => h.includes('codigo') || h.includes('código') || h === 'code');
+    if (idx >= 0) {
+      raw = lines.slice(1).map(l => (l.split(delim)[idx] || '').trim());
+    } else {
+      raw = lines.map(l => (l.split(delim)[0] || '').trim());
+    }
+  } else {
+    raw = lines;
+  }
+  return raw.map(c => c.replace(/^"|"$/g, '').trim().toUpperCase()).filter(Boolean);
+}
+
+async function writeTickets(eventRef, codes) {
+  for (let i = 0; i < codes.length; i += 400) {
+    const batch = db.batch();
+    codes.slice(i, i + 400).forEach(code => {
+      batch.set(eventRef.collection('tickets').doc(code), { used: false, usedAt: null });
+    });
+    await batch.commit();
+  }
+}
+
+document.getElementById('import-btn').onclick = async () => {
+  const name = document.getElementById('new-name').value.trim();
+  const date = document.getElementById('new-date').value;
+  const codes = [...new Set(parseImportedCodes(document.getElementById('import-text').value))];
+  if (!name) { alert('Preencha o nome do evento.'); return; }
+  if (!codes.length) { alert('Não foi encontrado nenhum código no texto/ficheiro colado.'); return; }
+  const btn = document.getElementById('import-btn');
+  btn.disabled = true; btn.textContent = 'A importar...';
+
+  const eventRef = db.collection('events').doc();
+  await eventRef.set({ name, date: date || null, total: codes.length, createdAt: Date.now() });
+  await writeTickets(eventRef, codes);
+
+  btn.disabled = false; btn.textContent = 'Importar bilhetes já existentes';
+  document.getElementById('new-name').value = '';
+  document.getElementById('import-text').value = '';
+  document.getElementById('import-file').value = '';
+  showTickets(eventRef.id, name, codes);
+};
+
+// ---------- Create event ----------
+document.getElementById('create-event-btn').onclick = async () => {
+  const name = document.getElementById('new-name').value.trim();
+  const date = document.getElementById('new-date').value;
+  const total = parseInt(document.getElementById('new-total').value, 10);
+  if (!name || !total || total < 1) { alert('Preencha o nome e o número de bilhetes.'); return; }
+  const btn = document.getElementById('create-event-btn');
+  btn.disabled = true; btn.textContent = 'A gerar...';
+
+  const prefix = slugPrefix(name);
+  const eventRef = db.collection('events').doc();
+  await eventRef.set({ name, date: date || null, total, createdAt: Date.now() });
+
+  const used = new Set();
+  const codes = [];
+  for (let i = 0; i < total; i++) {
+    let code;
+    do { code = `${prefix}-${String(i + 1).padStart(3, '0')}-${randSuffix(6)}`; } while (used.has(code));
+    used.add(code);
+    codes.push(code);
+  }
+
+  await writeTickets(eventRef, codes);
+
+  btn.disabled = false; btn.textContent = 'Gerar bilhetes e QR codes';
+  document.getElementById('new-name').value = '';
+  showTickets(eventRef.id, name, codes);
+};
+
+function renderEventsList() {
+  const el = document.getElementById('events-list');
+  if (!events.length) { el.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;">Nenhum evento ainda.</div>'; return; }
+  el.innerHTML = events.map(e => `
+    <div class="event-row">
+      <span>${e.name}${e.date ? ' — ' + e.date : ''} (${e.total})</span>
+      <span>
+        <button data-view="${e.id}">Ver QR</button>
+        <button data-del="${e.id}">Eliminar</button>
+      </span>
+    </div>`).join('');
+  el.querySelectorAll('[data-view]').forEach(b => b.onclick = () => viewEventTickets(b.dataset.view));
+  el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => deleteEvent(b.dataset.del));
+}
+
+async function viewEventTickets(eventId) {
+  const ev = events.find(e => e.id === eventId);
+  const qs = await db.collection('events').doc(eventId).collection('tickets').orderBy(firebase.firestore.FieldPath.documentId()).get();
+  const codes = qs.docs.map(d => d.id);
+  showTickets(eventId, ev.name, codes);
+}
+
+async function deleteEvent(eventId) {
+  if (!confirm('Eliminar este evento e todos os seus bilhetes? Não pode ser desfeito.')) return;
+  const qs = await db.collection('events').doc(eventId).collection('tickets').get();
+  const batchDocs = qs.docs;
+  for (let i = 0; i < batchDocs.length; i += 400) {
+    const batch = db.batch();
+    batchDocs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+  await db.collection('events').doc(eventId).delete();
+}
+
+function showTickets(eventId, name, codes) {
+  document.getElementById('tickets-card').style.display = 'block';
+  document.getElementById('tickets-title').textContent = `${name} — ${codes.length} bilhetes`;
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  const renderHost = document.getElementById('qr-render');
+  codes.forEach((code, idx) => {
+    renderHost.innerHTML = '';
+    new QRCode(renderHost, { text: code, width: 160, height: 160 });
+    const canvas = renderHost.querySelector('canvas');
+    const dataUrl = canvas ? canvas.toDataURL('image/png') : '';
+    const cell = document.createElement('div');
+    cell.className = 'tkt';
+    cell.innerHTML = `<img src="${dataUrl}" style="width:100%"><div class="n">Nº ${String(idx + 1).padStart(3, '0')}</div><div class="c">${code}</div>`;
+    grid.appendChild(cell);
+  });
+  document.getElementById('tickets-card').scrollIntoView({ behavior: 'smooth' });
+}
+
+document.getElementById('print-btn').onclick = () => window.print();
+
+// ---------- Scanning ----------
+let lastCode = null, lastTime = 0;
+const resultEl = document.getElementById('result');
+
+function showResult(kind, title, code, whenTs) {
+  resultEl.className = kind;
+  const extra = whenTs ? ' — entrou às ' + new Date(whenTs).toLocaleTimeString('pt-PT') : '';
+  resultEl.innerHTML = `${title}<div class="code">${code}${extra}</div>`;
+}
+
+async function handleScan(raw) {
+  const code = (raw || '').trim().toUpperCase();
+  const now = Date.now();
+  if (code === lastCode && now - lastTime < 2500) return;
+  lastCode = code; lastTime = now;
+  if (navigator.vibrate) navigator.vibrate(60);
+  if (!currentEventId) { showResult('err', 'Selecione um evento primeiro', ''); return; }
+  if (!ticketsState[code]) { showResult('err', 'CÓDIGO INVÁLIDO', code || '(vazio)'); return; }
+  if (ticketsState[code].used) { showResult('err', 'JÁ UTILIZADO', code, ticketsState[code].usedAt); return; }
+  try {
+    await db.collection('events').doc(currentEventId).collection('tickets').doc(code).update({ used: true, usedAt: now });
+    showResult('ok', 'ENTRADA AUTORIZADA ✔', code);
+  } catch (e) {
+    showResult('err', 'ERRO DE LIGAÇÃO — tente novamente', code);
+  }
+}
+
+document.getElementById('manual-btn').onclick = () => {
+  const inp = document.getElementById('manual-input');
+  handleScan(inp.value);
+  inp.value = '';
+};
+document.getElementById('manual-input').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('manual-btn').click(); });
+
+document.getElementById('reset-checkins-btn').onclick = async () => {
+  if (!currentEventId) return;
+  if (!confirm('Reiniciar todas as entradas deste evento para TODOS os dispositivos?')) return;
+  const qs = await db.collection('events').doc(currentEventId).collection('tickets').get();
+  for (let i = 0; i < qs.docs.length; i += 400) {
+    const batch = db.batch();
+    qs.docs.slice(i, i + 400).forEach(d => batch.update(d.ref, { used: false, usedAt: null }));
+    await batch.commit();
+  }
+};
+
+document.getElementById('download-csv-btn').onclick = () => {
+  if (!currentEventId) return;
+  const lines = ['Codigo;Estado;Hora de Entrada'];
+  Object.keys(ticketsState).sort().forEach(code => {
+    const t = ticketsState[code];
+    lines.push(`${code};${t.used ? 'Utilizado' : 'Nao utilizado'};${t.usedAt ? new Date(t.usedAt).toLocaleString('pt-PT') : ''}`);
+  });
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'registo_entradas.csv';
+  a.click();
+};
+
+// ---------- Camera ----------
+const video = document.getElementById('video');
+const canvasEl = document.getElementById('canvas');
+const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
+navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+  .then(stream => { video.srcObject = stream; video.play(); requestAnimationFrame(tick); })
+  .catch(() => { document.getElementById('cam-error').style.display = 'block'; });
+
+function tick() {
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    canvasEl.width = video.videoWidth; canvasEl.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
+    try {
+      const imgData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
+      const code = jsQR(imgData.data, imgData.width, imgData.height);
+      if (code && code.data) handleScan(code.data);
+    } catch (e) {}
+  }
+  requestAnimationFrame(tick);
+}
+
+loadEvents();
+</script>
+</body>
+</html>
