@@ -7,8 +7,8 @@
 <script src="config.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs@gh-pages/qrcode.min.js"></script>
 <style>
   :root { --bg:#1b120c; --panel:#2c1c12; --accent:#b01e1e; --gold:#d4a017; --text:#f5ead9; --muted:#b8a48f; --ok:#2f9e44; }
   * { box-sizing: border-box; }
@@ -93,6 +93,7 @@
         <video id="video" playsinline muted></video>
       </div>
       <div id="cam-error" style="display:none;color:var(--gold);font-size:0.78rem;text-align:center;margin-top:8px;">Câmara indisponível — use a verificação manual abaixo.</div>
+      <div id="debug-info" style="font-size:0.62rem;color:var(--muted);text-align:center;margin-top:4px;"></div>
 
       <div id="result">Selecione um evento e aponte a câmara</div>
 
@@ -473,19 +474,31 @@ document.getElementById('download-csv-btn').onclick = () => {
 const video = document.getElementById('video');
 const canvasEl = document.getElementById('canvas');
 const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
+const debugEl = document.getElementById('debug-info');
+let frameCount = 0;
+let lastErr = '';
+
+function updateDebug() {
+  const jsqrOk = typeof jsQR === 'function';
+  debugEl.textContent = `jsQR: ${jsqrOk ? 'OK' : 'NÃO CARREGOU'} · vídeo: ${video.videoWidth}x${video.videoHeight} · frames lidos: ${frameCount}` + (lastErr ? ` · erro: ${lastErr}` : '');
+}
+setInterval(updateDebug, 500);
+updateDebug();
+
 navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
   .then(stream => { video.srcObject = stream; video.play(); requestAnimationFrame(tick); })
-  .catch(() => { document.getElementById('cam-error').style.display = 'block'; });
+  .catch((e) => { document.getElementById('cam-error').style.display = 'block'; lastErr = e && e.name; updateDebug(); });
 
 function tick() {
   if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    frameCount++;
     canvasEl.width = video.videoWidth; canvasEl.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
     try {
       const imgData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
       const code = jsQR(imgData.data, imgData.width, imgData.height);
       if (code && code.data) handleScan(code.data);
-    } catch (e) {}
+    } catch (e) { lastErr = e && e.message; }
   }
   requestAnimationFrame(tick);
 }
